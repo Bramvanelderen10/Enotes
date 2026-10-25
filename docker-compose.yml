@@ -1,0 +1,12 @@
+services:
+  enotes:
+    build: .
+    container_name: enotes
+    ports:
+      - "36241:36241"
+    environment:
+      - Notes__DatabasePath=/data/notes.db
+      - Notes__AllowedOrigins__0=${ENOTES_WEB_ORIGIN:-http://localhost:8080}
+    volumes:
+      - ./data:/data
+    restart: unless-stopped

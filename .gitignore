@@ -1,0 +1,18 @@
+bin/
+obj/
+*.user
+*.suo
+.vs/
+logs/
+*.log
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# Android signing artifacts (never commit)
+upload-keystore.*
+*.jks
+*.keystore
+
+nupkg/
