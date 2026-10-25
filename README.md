@@ -28,6 +28,7 @@ recently saved version wins.
 - Full-screen note editor with two-way sync and automatic saving (no save button)
 - Copy button that puts the title and text of a note on the clipboard
 - Delete button on the note screen, next to the copy button
+- Dark theme by default, with a matching dark Android launch screen and web page
 - Flutter client for Android and web
 - Docker-ready deployment with published API and web images
 - GitHub Actions workflow that builds the container images, the Android APK and the web bundle
@@ -157,7 +158,8 @@ flutter build apk --release
 Install `build/app/outputs/flutter-apk/app-release.apk` on the Android device. On first launch,
 enter the server address, such as `https://notes.example.com` or `http://192.168.1.20:36241`, and
 choose a username. The address is the API's reachable URL, not necessarily the server's internal
-address. The client saves the server address and username on that device; use the same username on
+address. The client saves the server address and username on that device and prefills them when the
+settings screen is opened again, so they can be edited instead of retyped; use the same username on
 each device to see the same notes.
 
 Alternatively, download the prebuilt APK attached to a version-tag GitHub Release.

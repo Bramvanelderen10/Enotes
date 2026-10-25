@@ -31,6 +31,16 @@
 
   <title>Enotes</title>
   <link rel="manifest" href="manifest.json">
+
+  <!-- The app is dark; keep the page dark while Flutter loads, so starting it
+       does not flash white. Matches the theme's surface color (#121318). -->
+  <meta name="theme-color" content="#121318">
+  <style>
+    html,
+    body {
+      background-color: #121318;
+    }
+  </style>
 </head>
 <body>
   <!--

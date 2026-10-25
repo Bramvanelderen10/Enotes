@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">#3F51B5</color>
+    <!-- Matches the dark theme's surface color in the app:
+         ThemeData(colorSchemeSeed: Colors.indigo, brightness: Brightness.dark)
+         It is used for the launch screen and the window behind the Flutter UI,
+         so startup does not flash white. -->
+    <color name="enotes_background">#121318</color>
 </resources>

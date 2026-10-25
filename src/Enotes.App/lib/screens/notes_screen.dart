@@ -5,7 +5,6 @@ import 'package:http/http.dart' as http;
 
 import '../models/note.dart';
 import '../services/api_service.dart';
-import '../services/storage_service.dart';
 import '../widgets/masonry_grid.dart';
 import '../widgets/note_card.dart';
 import 'note_editor_screen.dart';
@@ -15,15 +14,15 @@ class NotesScreen extends StatefulWidget {
     super.key,
     required this.baseUrl,
     required this.username,
-    required this.storage,
-    required this.onDisconnect,
+    required this.onEditSettings,
     this.client,
   });
 
   final String baseUrl;
   final String username;
-  final StorageService storage;
-  final VoidCallback onDisconnect;
+
+  /// Opens the setup screen to change the server address or username.
+  final VoidCallback onEditSettings;
 
   /// Swappable for tests; see [ApiService].
   final http.Client? client;
@@ -95,11 +94,6 @@ class _NotesScreenState extends State<NotesScreen> {
     await _refresh();
   }
 
-  Future<void> _disconnect() async {
-    await widget.storage.clearConfig();
-    if (mounted) widget.onDisconnect();
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -113,7 +107,7 @@ class _NotesScreenState extends State<NotesScreen> {
           ),
           PopupMenuButton<String>(
             onSelected: (value) {
-              if (value == 'settings') _disconnect();
+              if (value == 'settings') widget.onEditSettings();
             },
             itemBuilder:
                 (_) => const [

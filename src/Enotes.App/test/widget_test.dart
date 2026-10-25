@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:enotes_app/main.dart';
 import 'package:enotes_app/models/note.dart';
 import 'package:enotes_app/screens/note_editor_screen.dart';
 import 'package:enotes_app/screens/notes_screen.dart';
@@ -53,6 +54,36 @@ http.Response _notesResponse(List<Note> notes) => http.Response(
   headers: _jsonHeaders,
 );
 
+/// In-memory [StorageService], so the setup screen and the entry point can be
+/// tested without the platform preferences plugin.
+class _FakeStorage extends StorageService {
+  _FakeStorage({this.config});
+
+  (String, String)? config;
+  int saveCalls = 0;
+  int clearCalls = 0;
+
+  @override
+  Future<(String, String)?> getConfig() async => config;
+
+  @override
+  Future<void> saveConfig(String url, String username) async {
+    saveCalls++;
+    config = (url, username);
+  }
+
+  @override
+  Future<void> clearConfig() async {
+    clearCalls++;
+    config = null;
+  }
+}
+
+String _fieldText(WidgetTester tester, {required bool first}) {
+  final fields = tester.widgetList<TextField>(find.byType(TextField)).toList();
+  return (first ? fields.first : fields.last).controller?.text ?? '';
+}
+
 void main() {
   testWidgets('setup asks for server and username', (tester) async {
     SharedPreferences.setMockInitialValues({});
@@ -65,6 +96,84 @@ void main() {
     expect(find.text('Server address'), findsOneWidget);
     expect(find.text('Username'), findsOneWidget);
     expect(find.text('Connect'), findsOneWidget);
+  });
+
+  testWidgets('setup prefills the server details that are saved', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final storage = _FakeStorage(config: ('http://192.168.1.10:36241', 'bram'));
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SetupScreen(
+          storage: storage,
+          onConfigured: (_, _) {},
+          initialUrl: 'http://192.168.1.10:36241',
+          initialUsername: 'bram',
+          onCancel: () {},
+          onForget: () {},
+        ),
+      ),
+    );
+
+    expect(_fieldText(tester, first: true), 'http://192.168.1.10:36241');
+    expect(_fieldText(tester, first: false), 'bram');
+
+    // Editing can be cancelled, and the saved details survive until a new
+    // connection is made.
+    await tester.tap(find.byType(BackButton));
+    await tester.pump();
+    expect(storage.config, ('http://192.168.1.10:36241', 'bram'));
+    expect(storage.saveCalls, 0);
+
+    await tester.tap(find.text('Forget saved server'));
+    await tester.pump();
+    expect(storage.clearCalls, 1);
+    expect(storage.config, isNull);
+    expect(_fieldText(tester, first: true), isEmpty);
+    expect(_fieldText(tester, first: false), isEmpty);
+  });
+
+  testWidgets('setup without saved details offers no way back', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SetupScreen(storage: _FakeStorage(), onConfigured: (_, _) {}),
+      ),
+    );
+
+    expect(_fieldText(tester, first: true), isEmpty);
+    expect(find.byType(BackButton), findsNothing);
+    expect(find.text('Forget saved server'), findsNothing);
+  });
+
+  testWidgets('the settings screen opens with the details in use', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final storage = _FakeStorage(config: ('http://192.168.1.10:36241', 'bram'));
+
+    await tester.pumpWidget(EnotesApp(storage: storage));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.text('bram’s notes'), findsOneWidget);
+
+    await tester.tap(find.byType(PopupMenuButton<String>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Change server or user'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Server settings'), findsOneWidget);
+    expect(_fieldText(tester, first: true), 'http://192.168.1.10:36241');
+    expect(_fieldText(tester, first: false), 'bram');
+
+    // Cancelling returns to the notes page with the same server and username.
+    await tester.tap(find.byType(BackButton));
+    await tester.pumpAndSettle();
+    expect(find.text('bram’s notes'), findsOneWidget);
+    expect(storage.config, ('http://192.168.1.10:36241', 'bram'));
   });
 
   testWidgets('a note opens on its own screen with a back button', (
@@ -257,8 +366,7 @@ void main() {
         home: NotesScreen(
           baseUrl: 'http://localhost:36241',
           username: 'tester',
-          storage: StorageService(),
-          onDisconnect: () {},
+          onEditSettings: () {},
           client: client,
         ),
       ),
