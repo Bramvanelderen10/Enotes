@@ -5,11 +5,19 @@ import 'package:http/http.dart' as http;
 import '../models/note.dart';
 
 class ApiService {
-  ApiService({required String baseUrl, required this.username})
-    : _baseUrl = _normalizeBaseUrl(baseUrl);
+  ApiService({
+    required String baseUrl,
+    required this.username,
+    http.Client? client,
+  }) : _baseUrl = _normalizeBaseUrl(baseUrl),
+       _client = client ?? http.Client();
 
   final String _baseUrl;
   final String username;
+
+  /// Swappable for tests; production code reuses one [http.Client] so the
+  /// keep-alive connection is shared between requests.
+  final http.Client _client;
 
   Uri _uri({String? noteId}) {
     final segments = <String>[
@@ -38,7 +46,7 @@ class ApiService {
 
   Future<bool> healthCheck() async {
     try {
-      final response = await http
+      final response = await _client
           .get(Uri.parse('$_baseUrl/health'))
           .timeout(const Duration(seconds: 5));
       return response.statusCode == 200;
@@ -48,7 +56,7 @@ class ApiService {
   }
 
   Future<List<Note>> getNotes() async {
-    final response = await http
+    final response = await _client
         .get(_uri())
         .timeout(const Duration(seconds: 10));
     _checkResponse(response);
@@ -62,7 +70,7 @@ class ApiService {
     required String title,
     required String content,
   }) async {
-    final response = await http
+    final response = await _client
         .post(
           _uri(),
           headers: {'Content-Type': 'application/json'},
@@ -78,7 +86,7 @@ class ApiService {
     required String title,
     required String content,
   }) async {
-    final response = await http
+    final response = await _client
         .put(
           _uri(noteId: id),
           headers: {'Content-Type': 'application/json'},
@@ -90,7 +98,7 @@ class ApiService {
   }
 
   Future<void> deleteNote(String id) async {
-    final response = await http
+    final response = await _client
         .delete(_uri(noteId: id))
         .timeout(const Duration(seconds: 10));
     _checkResponse(response);

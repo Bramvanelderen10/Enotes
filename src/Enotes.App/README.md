@@ -10,9 +10,23 @@ flutter run
 ```
 
 On first launch, provide the API address and username. The settings are saved locally and can be
-changed from the menu on the notes screen. The app refreshes the note list every two seconds while
-that screen is open. An open note editor also checks for remote changes; it refreshes automatically
-while untouched and warns rather than replacing local unsaved edits.
+changed from the menu on the notes screen. The app refreshes the notes every two seconds while that
+screen is open.
+
+Notes are shown as a grid of compact cards: title plus up to six lines of the content, so a short
+note stays a small square and a long one grows to about six lines before it is cut off. A phone shows
+two columns; wider windows fit more columns, with each card between roughly 120 and 240 logical
+pixels wide (that width is the `maxColumnWidth` of `lib/widgets/masonry_grid.dart`).
+
+Tapping a card (or "New note") opens the note on its own screen with a back button. That screen has
+no save button: every edit is sent to the API shortly after you stop typing, and the app bar reports
+the state (`Unsaved changes`, `Saving…`, `All changes saved`, or `Not saved`). While the note is
+untouched, the screen also polls for remote changes and loads them; if you are editing at the same
+time, your change is saved first and the most recently saved version wins.
+
+The app bar of the note screen also has a copy button, which puts the title and text of the note on
+the clipboard, and a delete button (for notes that exist on the server) that asks for confirmation and
+returns to the notes page.
 
 ## Build
 

@@ -1,10 +1,14 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 
 import '../models/note.dart';
 import '../services/api_service.dart';
 import '../services/storage_service.dart';
+import '../widgets/masonry_grid.dart';
+import '../widgets/note_card.dart';
+import 'note_editor_screen.dart';
 
 class NotesScreen extends StatefulWidget {
   const NotesScreen({
@@ -13,12 +17,16 @@ class NotesScreen extends StatefulWidget {
     required this.username,
     required this.storage,
     required this.onDisconnect,
+    this.client,
   });
 
   final String baseUrl;
   final String username;
   final StorageService storage;
   final VoidCallback onDisconnect;
+
+  /// Swappable for tests; see [ApiService].
+  final http.Client? client;
 
   @override
   State<NotesScreen> createState() => _NotesScreenState();
@@ -28,6 +36,7 @@ class _NotesScreenState extends State<NotesScreen> {
   late final ApiService _api = ApiService(
     baseUrl: widget.baseUrl,
     username: widget.username,
+    client: widget.client,
   );
   List<Note> _notes = [];
   bool _loading = true;
@@ -75,66 +84,20 @@ class _NotesScreenState extends State<NotesScreen> {
     }
   }
 
-  Future<void> _editNote({Note? note}) async {
-    final result = await showDialog<_NoteDraft>(
-      context: context,
-      builder: (_) => _NoteEditor(note: note, api: _api),
+  /// Opens the note on its own screen. The screen saves every edit by itself,
+  /// so the list is refreshed once the user comes back.
+  Future<void> _openNote({Note? note}) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => NoteEditorScreen(api: _api, note: note),
+      ),
     );
-    if (result == null) return;
-
-    try {
-      if (note == null) {
-        await _api.createNote(title: result.title, content: result.content);
-      } else {
-        await _api.updateNote(
-          note.id,
-          title: result.title,
-          content: result.content,
-        );
-      }
-      await _refresh();
-    } catch (error) {
-      _showError(error);
-    }
-  }
-
-  Future<void> _deleteNote(Note note) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder:
-          (context) => AlertDialog(
-            title: const Text('Delete note?'),
-            content: Text('“${note.title}” will be permanently deleted.'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: const Text('Delete'),
-              ),
-            ],
-          ),
-    );
-    if (confirmed != true) return;
-    try {
-      await _api.deleteNote(note.id);
-      await _refresh();
-    } catch (error) {
-      _showError(error);
-    }
+    await _refresh();
   }
 
   Future<void> _disconnect() async {
     await widget.storage.clearConfig();
     if (mounted) widget.onDisconnect();
-  }
-
-  void _showError(Object error) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(error.toString())));
   }
 
   @override
@@ -169,41 +132,25 @@ class _NotesScreenState extends State<NotesScreen> {
               ? _EmptyState(error: _error, onRetry: _refresh)
               : RefreshIndicator(
                 onRefresh: _refresh,
-                child: ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 88),
-                  itemCount: _notes.length,
-                  itemBuilder: (context, index) {
-                    final note = _notes[index];
-                    return Card(
-                      clipBehavior: Clip.antiAlias,
-                      child: ListTile(
-                        contentPadding: const EdgeInsets.fromLTRB(16, 8, 4, 8),
-                        title: Text(
-                          note.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                child: SingleChildScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 88),
+                  // The grid needs variable card heights, so it cannot be a
+                  // lazy sliver list; building all cards is fine for the note
+                  // counts this app serves.
+                  child: MasonryGrid(
+                    children: [
+                      for (final note in _notes)
+                        NoteCard(
+                          note: note,
+                          onTap: () => _openNote(note: note),
                         ),
-                        subtitle: Padding(
-                          padding: const EdgeInsets.only(top: 8),
-                          child: Text(
-                            note.content.isEmpty ? 'No content' : note.content,
-                            maxLines: 4,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        onTap: () => _editNote(note: note),
-                        trailing: IconButton(
-                          tooltip: 'Delete note',
-                          onPressed: () => _deleteNote(note),
-                          icon: const Icon(Icons.delete_outline),
-                        ),
-                      ),
-                    );
-                  },
+                    ],
+                  ),
                 ),
               ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _editNote(),
+        onPressed: () => _openNote(),
         icon: const Icon(Icons.add),
         label: const Text('New note'),
       ),
@@ -257,164 +204,6 @@ class _EmptyState extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _NoteDraft {
-  const _NoteDraft(this.title, this.content);
-
-  final String title;
-  final String content;
-}
-
-class _NoteEditor extends StatefulWidget {
-  const _NoteEditor({required this.note, required this.api});
-
-  final Note? note;
-  final ApiService api;
-
-  @override
-  State<_NoteEditor> createState() => _NoteEditorState();
-}
-
-class _NoteEditorState extends State<_NoteEditor> {
-  late final TextEditingController _titleController = TextEditingController(
-    text: widget.note?.title ?? '',
-  );
-  late final TextEditingController _contentController = TextEditingController(
-    text: widget.note?.content ?? '',
-  );
-  late String _baseTitle = widget.note?.title ?? '';
-  late String _baseContent = widget.note?.content ?? '';
-  late DateTime _lastSyncedAt = widget.note?.updatedAtUtc ?? DateTime.now();
-  String? _error;
-  String? _syncWarning;
-  Timer? _syncTimer;
-  bool _checkingRemote = false;
-
-  @override
-  void initState() {
-    super.initState();
-    if (widget.note != null) {
-      _syncTimer = Timer.periodic(
-        const Duration(seconds: 2),
-        (_) => unawaited(_syncRemoteChanges()),
-      );
-    }
-  }
-
-  @override
-  void dispose() {
-    _syncTimer?.cancel();
-    _titleController.dispose();
-    _contentController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _syncRemoteChanges() async {
-    final note = widget.note;
-    if (note == null || _checkingRemote) return;
-    _checkingRemote = true;
-    try {
-      final notes = await widget.api.getNotes();
-      if (!mounted) return;
-      final remote = notes.where((item) => item.id == note.id).firstOrNull;
-      if (remote == null) {
-        setState(
-          () => _syncWarning = 'This note was deleted on another device.',
-        );
-        return;
-      }
-      if (!remote.updatedAtUtc.isAfter(_lastSyncedAt)) return;
-
-      final hasLocalEdits =
-          _titleController.text != _baseTitle ||
-          _contentController.text != _baseContent;
-      if (hasLocalEdits) {
-        setState(() {
-          _syncWarning =
-              'This note changed on another device. Cancel and reopen to load it.';
-        });
-        return;
-      }
-
-      _baseTitle = remote.title;
-      _baseContent = remote.content;
-      _lastSyncedAt = remote.updatedAtUtc;
-      setState(() {
-        _titleController.text = remote.title;
-        _contentController.text = remote.content;
-        _syncWarning = null;
-      });
-    } catch (error) {
-      if (mounted) {
-        setState(() => _syncWarning = 'Live sync check failed: $error');
-      }
-    } finally {
-      _checkingRemote = false;
-    }
-  }
-
-  void _save() {
-    final title = _titleController.text.trim();
-    if (title.isEmpty || title.length > 200) {
-      setState(() => _error = 'Title is required (maximum 200 characters).');
-      return;
-    }
-    Navigator.pop(context, _NoteDraft(title, _contentController.text));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(widget.note == null ? 'New note' : 'Edit note'),
-      content: SizedBox(
-        width: 520,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: _titleController,
-              maxLength: 200,
-              autofocus: true,
-              decoration: const InputDecoration(
-                labelText: 'Title',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _contentController,
-              minLines: 8,
-              maxLines: 14,
-              maxLength: 1000000,
-              decoration: const InputDecoration(
-                labelText: 'Note',
-                alignLabelWithHint: true,
-                border: OutlineInputBorder(),
-              ),
-            ),
-            if (_error != null)
-              Text(
-                _error!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-            if (_syncWarning != null)
-              Text(
-                _syncWarning!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(onPressed: _save, child: const Text('Save')),
-      ],
     );
   }
 }

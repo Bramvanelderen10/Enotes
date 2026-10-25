@@ -3,10 +3,12 @@
 Enotes is a self-hosted notes app. A .NET 10 minimal API stores notes in SQLite, and a Flutter
 client provides Android and web apps. Notes are grouped by the username entered in the client.
 
-The client checks for changes from other devices every two seconds while the notes list or an editor
-is open. If an open editor has no unsaved changes, it displays updates from the server. If there are
-local unsaved changes, it warns instead of replacing them. If two devices save changes to the same
-note, the most recently saved version wins.
+The client checks for changes from other devices every two seconds while the notes page or a note is
+open. The notes page lays the notes out as a grid of small preview cards, two per row on a phone.
+Tapping a note opens it on its own screen instead of a dialog, and that screen has no save button:
+every edit is sent to the API shortly after typing stops. While the open note is untouched, newer
+versions from the server are loaded into it. If two devices save changes to the same note, the most
+recently saved version wins.
 
 ## What this repository contains
 
@@ -20,7 +22,12 @@ note, the most recently saved version wins.
 - Server-side validation (username 1-100, title 1-200, content up to 1,000,000 characters)
 - OpenAPI document + Scalar docs UI
 - Optional CORS allow-list for a separately hosted web app
-- Two-second change polling that warns instead of overwriting local unsaved edits
+- Two-second change polling on the notes page and on the open note
+- Notes page shown as a grid of compact preview cards: two per row on a phone and more on a wide
+  window, each card showing the title and up to six lines of the content
+- Full-screen note editor with two-way sync and automatic saving (no save button)
+- Copy button that puts the title and text of a note on the clipboard
+- Delete button on the note screen, next to the copy button
 - Flutter client for Android and web
 - Docker-ready deployment with published API and web images
 - GitHub Actions workflow that builds the container images, the Android APK and the web bundle
@@ -204,6 +211,10 @@ Create and update requests use JSON with a title and content:
 }
 ```
 
+Notes in responses also carry `id`, `createdAtUtc` and `updatedAtUtc`. Both timestamps are UTC in
+ISO 8601 form (with the trailing `Z`), and `updatedAtUtc` changes on every save, which is what the
+client uses to notice edits made on other devices.
+
 Responses:
 
 | Status | Meaning |
@@ -363,8 +374,9 @@ docker-compose.yml       # Runs the API and web containers together
 | Client cannot connect | The API address entered in the client must be reachable from that device |
 | Browser console shows a CORS error | `ENOTES_WEB_ORIGIN` / `Notes:AllowedOrigins` must match the web app's origin, including scheme and port; Android clients do not use CORS |
 | Notes missing on another device | Both devices need the same username and the same API address |
-| A note was overwritten | Expected: the most recently saved version wins; the client warns before discarding local unsaved edits |
-| "This note changed on another device" | Expected: the note was edited elsewhere; cancel and reopen the editor to load it |
+| A note was overwritten | Expected: the most recently saved version wins; the editor saves every edit automatically, so the latest change wins |
+| "Not saved" in the note screen | The automatic save failed; check that the API is reachable and that the note still has a title of at most 200 characters |
+| Edits by another device do not appear in an open note | Expected while you have local changes in that note; they are pushed first, then the newest version wins |
 | `cp data/notes.db` fails with "Permission denied" | The container runs as root and created the file; run `sudo chown -R "$USER":"$USER" data` |
 | `docker compose up` fails with `denied` while pulling an image | The GHCR package is private; make it public in the package settings, run `docker login ghcr.io`, or build locally with `docker compose up -d --build` |
 | Ports `36241` or `8080` already in use | Change the host side of the port mappings or set `ENOTES_WEB_PORT` |
