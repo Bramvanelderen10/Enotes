@@ -312,6 +312,11 @@ flutter run
 
 Useful validation commands are `flutter analyze` and `flutter test`, run from `src/Enotes.App`.
 
+`src/Enotes.App/pubspec.lock` and `src/Enotes.App/web` are committed on purpose: the container image
+and the release builds need the web entrypoint (`flutter build web` fails without it), and the
+lockfile keeps every build on the same dependency versions. Run `flutter pub get` after editing
+`pubspec.yaml` so the lockfile stays in sync.
+
 On pushes to `main` and version tags, the GitHub Actions workflow builds and pushes the API container
 image (`ghcr.io/<owner>/<repository>`) and Flutter web image
 (`ghcr.io/<owner>/<repository>-web`). For example:

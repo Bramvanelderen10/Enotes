@@ -1,6 +1,8 @@
 FROM ghcr.io/cirruslabs/flutter:stable AS build
 WORKDIR /app
 
+# pubspec.lock is committed (see .gitignore), so copy it too, and the image resolves the exact same
+# dependency versions as your machine and as the CI release builds.
 COPY src/Enotes.App/pubspec.yaml src/Enotes.App/pubspec.lock ./
 RUN flutter pub get
 

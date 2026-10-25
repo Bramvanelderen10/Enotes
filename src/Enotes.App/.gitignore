@@ -30,11 +30,14 @@ migrate_working_dir/
 .pub-cache/
 .pub/
 /build/
-pubspec.lock
+# pubspec.lock IS committed on purpose (Flutter's guidance for applications): the container image,
+# APK and web builds must all resolve the exact same dependency versions.
 
 # Platform directories
+# ios/, linux/, macos/ and windows/ are generated on demand by `flutter create`; this project
+# targets Android (tracked android/ directory) and web (tracked web/ directory, which the web
+# container image build needs).
 /ios/
 /linux/
 /macos/
 /windows/
-/web/

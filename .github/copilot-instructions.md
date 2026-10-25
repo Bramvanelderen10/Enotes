@@ -16,6 +16,8 @@ client. Notes are stored in SQLite and scoped by a username that is an identifie
 ## Flutter client
 
 - App project: `src/Enotes.App`
+- `src/Enotes.App/pubspec.lock` and `src/Enotes.App/web` are committed on purpose (the image, APK and
+  web builds need them); do not add them to `.gitignore`.
 - Settings store the API address and username in shared preferences.
 - Note changes from other devices are polled every two seconds while the notes screen or a note
   editor is open. Do not silently overwrite local unsaved editor changes.
