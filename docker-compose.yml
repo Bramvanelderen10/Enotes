@@ -1,12 +1,33 @@
 services:
-  enotes:
+  enotes-api:
+    # Published image: `docker compose up -d` pulls it. Add `--build` to build from source instead.
+    image: ghcr.io/bramvanelderen10/enotes:main
     build: .
-    container_name: enotes
+    container_name: enotes-api
     ports:
       - "36241:36241"
     environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      # SQLite database file inside the container; ./data is mounted below.
       - Notes__DatabasePath=/data/notes.db
+      # Origin used to open the web app in a browser (scheme + host + port, no path).
+      # Browsers enforce CORS; Android clients do not. Add Notes__AllowedOrigins__1, __2, ...
+      # for extra origins.
       - Notes__AllowedOrigins__0=${ENOTES_WEB_ORIGIN:-http://localhost:8080}
     volumes:
+      # Binds the database next to this compose file, so backing up ./data is enough.
       - ./data:/data
+    restart: unless-stopped
+
+  enotes-web:
+    # Published image: `docker compose up -d` pulls it. Add `--build` to build from source instead.
+    image: ghcr.io/bramvanelderen10/enotes-web:main
+    build:
+      context: .
+      dockerfile: src/Enotes.App/Dockerfile
+    container_name: enotes-web
+    ports:
+      - "${ENOTES_WEB_PORT:-8080}:80"
+    depends_on:
+      - enotes-api
     restart: unless-stopped

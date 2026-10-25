@@ -1,0 +1,14 @@
+.git
+.github
+.vscode
+**/bin
+**/obj
+**/.dart_tool
+**/build
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/local.properties
+data
+*.db
+*.db-shm
+*.db-wal
