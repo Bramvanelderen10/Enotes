@@ -232,6 +232,51 @@ jobs:
           if [ -n "${ANDROID_KEY_ALIAS:-}" ]; then echo "Has ANDROID_KEY_ALIAS: yes"; else echo "Has ANDROID_KEY_ALIAS: no"; fi
           if [ -n "${ANDROID_KEY_PASSWORD:-}" ]; then echo "Has ANDROID_KEY_PASSWORD: yes"; else echo "Has ANDROID_KEY_PASSWORD: no"; fi
 
+      - name: Require release signing for tagged releases
+        if: steps.vars.outputs.is_tag == 'true'
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          # A debug-signed APK uses a key that is regenerated on every runner, so two
+          # builds sign differently and the second cannot be installed over the first
+          # ("There is a problem with the app file"). Refuse to publish such a release.
+          missing=""
+          [ -n "${ANDROID_KEYSTORE_BASE64:-}" ] || missing="${missing} ANDROID_KEYSTORE_BASE64"
+          [ -n "${ANDROID_KEYSTORE_PASSWORD:-}" ] || missing="${missing} ANDROID_KEYSTORE_PASSWORD"
+          [ -n "${ANDROID_KEY_ALIAS:-}" ] || missing="${missing} ANDROID_KEY_ALIAS"
+          [ -n "${ANDROID_KEY_PASSWORD:-}" ] || missing="${missing} ANDROID_KEY_PASSWORD"
+
+          if [ -n "${missing}" ]; then
+            echo "::error::Refusing to build a release APK without release signing."
+            echo "Missing secrets:${missing}" >&2
+            echo "Set these repository secrets so every release is signed with the same key;" >&2
+            echo "otherwise existing installs cannot be updated. See README (Troubleshooting)." >&2
+            exit 1
+          fi
+
+      - name: Compute Android version from tag
+        id: android_version
+        if: steps.vars.outputs.is_tag == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Map the tag (e.g. v1.2.3) to a monotonically increasing versionCode so Android
+          # recognises each release as an upgrade of the previous one.
+          version="${{ steps.vars.outputs.tag }}"
+          version="${version#v}"
+          IFS='.' read -r major minor patch <<< "${version}"
+          major="${major:-0}"; minor="${minor:-0}"; patch="${patch:-0}"
+          patch="${patch%%-*}"
+          echo "build_name=${version}" >> "$GITHUB_OUTPUT"
+          echo "build_number=$(( major * 10000 + minor * 100 + patch ))" >> "$GITHUB_OUTPUT"
+
       - name: Build Android APK (release)
         working-directory: ${{ env.APP_DIR }}
         env:
@@ -239,7 +284,16 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: flutter build apk --release
+        run: |
+          set -euo pipefail
+
+          if [ "${{ steps.vars.outputs.is_tag }}" = "true" ]; then
+            flutter build apk --release \
+              --build-name "${{ steps.android_version.outputs.build_name }}" \
+              --build-number "${{ steps.android_version.outputs.build_number }}"
+          else
+            flutter build apk --release
+          fi
 
       - name: Collect APK
         id: apk

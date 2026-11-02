@@ -172,6 +172,88 @@ each device to see the same notes.
 
 Alternatively, download the prebuilt APK attached to a version-tag GitHub Release.
 
+> **Updating an existing install.** Android only accepts an update when the new APK is signed with
+> the same key as the installed app and has a version code that does not go backwards. Release builds
+> use the keystore from the `ANDROID_KEYSTORE_*` secrets (the workflow derives the version code from
+> the tag, so each tag is a proper upgrade); a build without those secrets is signed with a throwaway
+> debug key, which is why installing it over an existing Enotes install fails with "There is a problem
+> with the app file". Uninstall the old app first, or sign locally with the same keystore by exporting
+> `ANDROID_KEYSTORE_PATH`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and
+> `ANDROID_KEY_PASSWORD` before `flutter build apk`.
+
+### Android release signing
+
+The release workflow signs the APK with a keystore stored in four repository secrets. Without them
+the build falls back to a debug key that changes on every CI runner, so the APK cannot be installed
+as an update (see Troubleshooting).
+
+Create the keystore once (any JDK provides `keytool`):
+
+```bash
+keytool -genkeypair -v \
+  -keystore upload-keystore.jks \
+  -alias enotes \
+  -keyalg RSA -keysize 2048 -validity 10000 \
+  -storetype PKCS12 \
+  -storepass 'STORE_PASSWORD' \
+  -keypass 'STORE_PASSWORD' \
+  -dname "CN=Enotes, OU=Dev, O=Enotes, L=City, ST=State, C=NL"
+```
+
+- Use the **same** password for the store and the key: PKCS12 (the modern default) does not support
+  separate passwords and `keytool` ignores `-keypass` if it differs.
+- `-validity 10000` is about 27 years, long enough that the signing certificate does not expire.
+- The alias (`enotes` above) is free-form; note it down, it becomes `ANDROID_KEY_ALIAS`.
+- Also note down the store password, it becomes `ANDROID_KEYSTORE_PASSWORD` and `ANDROID_KEY_PASSWORD`.
+
+Encode the keystore as single-line base64:
+
+```bash
+# Linux
+base64 -w0 upload-keystore.jks > upload-keystore.jks.b64
+# macOS
+base64 -i upload-keystore.jks | tr -d '\n' > upload-keystore.jks.b64
+```
+
+```powershell
+# Windows PowerShell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("upload-keystore.jks")) | Set-Content -NoNewline upload-keystore.jks.b64
+```
+
+Add the four repository secrets under **Settings → Secrets and variables → Actions**, or with the
+GitHub CLI:
+
+```bash
+gh secret set ANDROID_KEYSTORE_BASE64 < upload-keystore.jks.b64
+gh secret set ANDROID_KEYSTORE_PASSWORD --body 'STORE_PASSWORD'
+gh secret set ANDROID_KEY_ALIAS --body 'enotes'
+gh secret set ANDROID_KEY_PASSWORD --body 'STORE_PASSWORD'
+gh secret list
+```
+
+Verify the alias is in the keystore:
+
+```bash
+keytool -list -keystore upload-keystore.jks -storepass 'STORE_PASSWORD'
+```
+
+To produce an upgrade-compatible APK locally, export the same four values before building (the
+`build.gradle.kts` reads `ANDROID_KEYSTORE_PATH`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`
+and `ANDROID_KEY_PASSWORD`):
+
+```bash
+ANDROID_KEYSTORE_PATH="$PWD/upload-keystore.jks" \
+ANDROID_KEYSTORE_PASSWORD='STORE_PASSWORD' \
+ANDROID_KEY_ALIAS='enotes' \
+ANDROID_KEY_PASSWORD='STORE_PASSWORD' \
+flutter build apk --release
+```
+
+Keep the keystore and its passwords safe (for example in a password manager) and back them up. The
+same key has to sign every future update; if it is lost, existing installs cannot be updated and the
+app has to be uninstalled and reinstalled. The file must never be committed — `.gitignore` already
+ignores `*.jks`, `*.keystore` and `upload-keystore.*`.
+
 ### Web
 
 Build the web app:
@@ -411,6 +493,7 @@ docker-compose.yml       # Runs the API and web containers together
 | Notes missing on another device | Both devices need the same username and the same API address |
 | A note was overwritten | Expected: the most recently saved version wins; the editor saves every edit automatically, so the latest change wins |
 | "Not saved" in the note screen | The automatic save failed; check that the API is reachable and that the note still has a title of at most 200 characters |
+| Android says "Can't install app" or "There is a problem with the app file" when updating to a new version | The APK is signed with a different key than the installed app, so Android refuses the update. Uninstall the old Enotes app and install the new APK again. To avoid it, sign every build with the same keystore: releases must have the `ANDROID_KEYSTORE_*` secrets set (a build from a CI runner without them is debug-signed with a key that changes every run), and local builds must use the same keystore via the `ANDROID_KEYSTORE_PATH`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD` environment variables |
 | Edits by another device do not appear in an open note | Expected while you have local changes in that note; they are pushed first, then the newest version wins |
 | `cp data/notes.db` fails with "Permission denied" | The container runs as root and created the file; run `sudo chown -R "$USER":"$USER" data` |
 | `docker compose up` fails with `denied` while pulling an image | The GHCR package is private; make it public in the package settings, run `docker login ghcr.io`, or build locally with `docker compose up -d --build` |
