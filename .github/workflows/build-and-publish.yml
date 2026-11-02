@@ -162,6 +162,10 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
+          # Pinned on purpose: file_picker 11.x is the last release that supports
+          # Flutter < 3.38, and an unpinned toolchain silently changes the
+          # binaries produced from identical commits.
+          flutter-version: "3.35.7"
           channel: stable
           cache: true
 

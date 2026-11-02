@@ -154,26 +154,34 @@ class _NotesScreenState extends State<NotesScreen> {
 
   /// Picks a file with the platform's native selector and uploads it as a file note.
   Future<void> _uploadFile() async {
-    PlatformFile? picked;
+    FilePickerResult? result;
     try {
-      picked = await FilePicker.pickFile(
+      result = await FilePicker.pickFiles(
         dialogTitle: 'Choose a file to upload',
         type: FileType.any,
+        // Stream the bytes instead of loading the whole file into memory.
+        withReadStream: true,
       );
     } catch (error) {
       _showMessage('Could not open the file picker: $error');
       return;
     }
-    if (picked == null) return;
-    final file = picked;
+    if (result == null || result.files.isEmpty) return;
+    final file = result.files.first;
 
-    final size = file.lengthSync() ?? await file.length() ?? 0;
+    final size = file.size;
     if (size > _maxUploadBytes) {
       _showMessage('“${file.name}” is larger than the 10 GB limit.');
       return;
     }
     if (size == 0) {
       _showMessage('“${file.name}” is empty.');
+      return;
+    }
+
+    final content = _contentStream(file);
+    if (content == null) {
+      _showMessage('Could not read “${file.name}”.');
       return;
     }
 
@@ -196,7 +204,7 @@ class _NotesScreenState extends State<NotesScreen> {
       await _api.uploadFile(
         fileName: file.name,
         size: size,
-        content: file.readAsByteStream(),
+        content: content,
         onProgress: (sent) => progress.value = sent,
       );
       await _refresh();
@@ -208,6 +216,16 @@ class _NotesScreenState extends State<NotesScreen> {
         Navigator.of(context, rootNavigator: true).pop();
       }
     }
+  }
+
+  /// The byte stream for [file], preferring the streamed pick so large files are
+  /// never loaded into memory; web falls back to the in-memory bytes.
+  static Stream<List<int>>? _contentStream(PlatformFile file) {
+    final stream = file.readStream;
+    if (stream != null) return stream;
+    final bytes = file.bytes;
+    if (bytes != null) return Stream<List<int>>.value(bytes);
+    return null;
   }
 
   void _showMessage(String message) {
