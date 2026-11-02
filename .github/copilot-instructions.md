@@ -9,6 +9,11 @@ client. Notes are stored in SQLite and scoped by a username that is an identifie
 - Settings live in `src/Enotes.Api/appsettings.json` under `Notes`, or in environment variables
   (`__` separator), for example `Notes__AllowedOrigins__0`
 - SQLite database path: `Notes:DatabasePath` (defaults to `data/notes.db`)
+- Uploaded files are kept under `Notes:StoragePath` (defaults to a `files` folder beside the database);
+  a file note's bytes stream to disk, never into SQLite, and `Notes:MaxFileSizeBytes` (default 10 GB)
+  caps both the upload and the Kestrel request body
+- The database is created with `EnsureCreatedAsync` and has no EF migrations; columns added to `Note`
+  are applied by `NotesDatabase.InitializeAsync`, so update that when the model changes
 - API listens on port `36241`
 - Note endpoints are in `src/Enotes.Api/Notes`
 - Run with `dotnet run --project src/Enotes.Api`

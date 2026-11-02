@@ -1,12 +1,16 @@
 import 'dart:async';
 
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/note.dart';
 import '../services/api_service.dart';
+import '../utils/format.dart';
 import '../widgets/masonry_grid.dart';
 import '../widgets/note_card.dart';
+import 'file_note_screen.dart';
 import 'note_editor_screen.dart';
 
 class NotesScreen extends StatefulWidget {
@@ -31,7 +35,13 @@ class NotesScreen extends StatefulWidget {
   State<NotesScreen> createState() => _NotesScreenState();
 }
 
+/// The two things the "+" button can add.
+enum _AddChoice { note, file }
+
 class _NotesScreenState extends State<NotesScreen> {
+  /// Largest file the app uploads, matching the API's default limit.
+  static const _maxUploadBytes = 10 * 1024 * 1024 * 1024;
+
   late final ApiService _api = ApiService(
     baseUrl: widget.baseUrl,
     username: widget.username,
@@ -83,15 +93,127 @@ class _NotesScreenState extends State<NotesScreen> {
     }
   }
 
-  /// Opens the note on its own screen. The screen saves every edit by itself,
-  /// so the list is refreshed once the user comes back.
+  /// Opens a note: text notes on their editor screen, file notes on the file screen.
+  /// Both screens save/delete on their own, so the list is refreshed once the user
+  /// comes back.
   Future<void> _openNote({Note? note}) async {
+    if (note != null && note.isFile) {
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => FileNoteScreen(api: _api, note: note),
+        ),
+      );
+      await _refresh();
+      return;
+    }
+
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => NoteEditorScreen(api: _api, note: note),
       ),
     );
     await _refresh();
+  }
+
+  /// Opens the little chooser behind the "+" button: write a note or upload a file.
+  Future<void> _showAddOptions() async {
+    final choice = await showModalBottomSheet<_AddChoice>(
+      context: context,
+      showDragHandle: true,
+      builder:
+          (context) => SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.note_add_outlined),
+                  title: const Text('New note'),
+                  subtitle: const Text('Write a text note'),
+                  onTap: () => Navigator.pop(context, _AddChoice.note),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.upload_file_outlined),
+                  title: const Text('Upload file'),
+                  subtitle: const Text('Share any file up to 10 GB'),
+                  onTap: () => Navigator.pop(context, _AddChoice.file),
+                ),
+              ],
+            ),
+          ),
+    );
+    if (!mounted || choice == null) return;
+    switch (choice) {
+      case _AddChoice.note:
+        await _openNote();
+        break;
+      case _AddChoice.file:
+        await _uploadFile();
+        break;
+    }
+  }
+
+  /// Picks a file with the platform's native selector and uploads it as a file note.
+  Future<void> _uploadFile() async {
+    PlatformFile? picked;
+    try {
+      picked = await FilePicker.pickFile(
+        dialogTitle: 'Choose a file to upload',
+        type: FileType.any,
+      );
+    } catch (error) {
+      _showMessage('Could not open the file picker: $error');
+      return;
+    }
+    if (picked == null) return;
+    final file = picked;
+
+    final size = file.lengthSync() ?? await file.length() ?? 0;
+    if (size > _maxUploadBytes) {
+      _showMessage('“${file.name}” is larger than the 10 GB limit.');
+      return;
+    }
+    if (size == 0) {
+      _showMessage('“${file.name}” is empty.');
+      return;
+    }
+
+    if (!mounted) return;
+
+    // A determinate progress dialog, updated while the bytes stream to the server.
+    final progress = ValueNotifier<int>(0);
+    var dialogOpen = true;
+    unawaited(
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder:
+            (context) =>
+                _UploadDialog(name: file.name, size: size, progress: progress),
+      ).whenComplete(() => dialogOpen = false),
+    );
+
+    try {
+      await _api.uploadFile(
+        fileName: file.name,
+        size: size,
+        content: file.readAsByteStream(),
+        onProgress: (sent) => progress.value = sent,
+      );
+      await _refresh();
+      if (mounted) _showMessage('Uploaded “${file.name}”');
+    } catch (error) {
+      if (mounted) _showMessage('Upload failed: $error');
+    } finally {
+      if (dialogOpen && mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+    }
+  }
+
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -143,10 +265,10 @@ class _NotesScreenState extends State<NotesScreen> {
                   ),
                 ),
               ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _openNote(),
-        icon: const Icon(Icons.add),
-        label: const Text('New note'),
+      floatingActionButton: FloatingActionButton(
+        tooltip: 'Add',
+        onPressed: _showAddOptions,
+        child: const Icon(Icons.add),
       ),
       bottomNavigationBar:
           _error == null
@@ -197,6 +319,52 @@ class _EmptyState extends StatelessWidget {
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Non-dismissible dialog shown while a file uploads, with a progress bar that
+/// follows the bytes sent to the server.
+class _UploadDialog extends StatelessWidget {
+  const _UploadDialog({
+    required this.name,
+    required this.size,
+    required this.progress,
+  });
+
+  final String name;
+  final int size;
+  final ValueListenable<int> progress;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Uploading'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(name, maxLines: 2, overflow: TextOverflow.ellipsis),
+          const SizedBox(height: 16),
+          ValueListenableBuilder<int>(
+            valueListenable: progress,
+            builder: (context, sent, _) {
+              final value = size <= 0 ? null : (sent / size).clamp(0.0, 1.0);
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  LinearProgressIndicator(value: value),
+                  const SizedBox(height: 8),
+                  Text(
+                    '${formatFileSize(sent)} of ${formatFileSize(size)}',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              );
+            },
+          ),
+        ],
       ),
     );
   }

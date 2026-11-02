@@ -12,5 +12,6 @@ WORKDIR /app
 COPY --from=build /app/publish .
 
 ENV Notes__DatabasePath=/data/notes.db
+ENV Notes__StoragePath=/data/files
 EXPOSE 36241
 ENTRYPOINT ["dotnet", "Enotes.Api.dll"]

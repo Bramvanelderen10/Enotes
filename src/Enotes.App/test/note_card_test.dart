@@ -3,14 +3,22 @@ import 'package:enotes_app/widgets/note_card.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-Note _note({String title = 'Groceries', String content = 'Milk and bread'}) =>
-    Note(
-      id: 'c1f0e0a4-3b1e-4e9f-9c2a-0f6a5e2d1b3c',
-      title: title,
-      content: content,
-      createdAtUtc: DateTime.utc(2026, 1, 1),
-      updatedAtUtc: DateTime.utc(2026, 1, 1),
-    );
+Note _note({
+  String title = 'Groceries',
+  String content = 'Milk and bread',
+  String kind = Note.kindText,
+  String? fileName,
+  int? sizeBytes,
+}) => Note(
+  id: 'c1f0e0a4-3b1e-4e9f-9c2a-0f6a5e2d1b3c',
+  title: title,
+  content: content,
+  createdAtUtc: DateTime.utc(2026, 1, 1),
+  updatedAtUtc: DateTime.utc(2026, 1, 1),
+  kind: kind,
+  fileName: fileName,
+  sizeBytes: sizeBytes,
+);
 
 Future<void> _pumpCard(
   WidgetTester tester,
@@ -48,6 +56,30 @@ void main() {
     await _pumpCard(tester, _note(content: '   '));
 
     expect(find.text('No content'), findsOneWidget);
+  });
+
+  testWidgets('a file note shows its name and size instead of content', (
+    tester,
+  ) async {
+    await _pumpCard(
+      tester,
+      _note(
+        title: 'report.pdf',
+        content: '',
+        kind: Note.kindFile,
+        fileName: 'quarterly report.pdf',
+        sizeBytes: 3 * 1024 * 1024,
+      ),
+    );
+
+    expect(find.byIcon(Icons.insert_drive_file_outlined), findsOneWidget);
+    expect(find.text('quarterly report.pdf'), findsOneWidget);
+    expect(find.text('3 MB'), findsOneWidget);
+    expect(
+      find.text('No content'),
+      findsNothing,
+      reason: 'a file note shows the file, not a text preview',
+    );
   });
 
   testWidgets('tapping the card opens the note', (tester) async {

@@ -10,6 +10,10 @@ services:
       - ASPNETCORE_ENVIRONMENT=Production
       # SQLite database file inside the container; ./data is mounted below.
       - Notes__DatabasePath=/data/notes.db
+      # Uploaded files inside the container; also under the mounted ./data directory.
+      - Notes__StoragePath=/data/files
+      # Largest upload accepted, in bytes (10 GB). Also the request body limit.
+      - Notes__MaxFileSizeBytes=10737418240
       # Origin used to open the web app in a browser (scheme + host + port, no path).
       # Browsers enforce CORS; Android clients do not. Add Notes__AllowedOrigins__1, __2, ...
       # for extra origins.

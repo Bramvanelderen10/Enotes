@@ -19,7 +19,11 @@ class ApiService {
   /// keep-alive connection is shared between requests.
   final http.Client _client;
 
-  Uri _uri({String? noteId}) {
+  Uri _uri({
+    String? noteId,
+    List<String> extra = const [],
+    Map<String, String>? query,
+  }) {
     final segments = <String>[
       ...Uri.parse(_baseUrl).pathSegments.where((part) => part.isNotEmpty),
       'api',
@@ -27,9 +31,17 @@ class ApiService {
       username,
       'notes',
       if (noteId != null) noteId,
+      ...extra,
     ];
-    return Uri.parse(_baseUrl).replace(pathSegments: segments);
+    return Uri.parse(_baseUrl).replace(
+      pathSegments: segments,
+      queryParameters: query,
+    );
   }
+
+  /// URL that streams the file of a file note. It lives on the same host as the API,
+  /// so it can be opened in a browser or downloaded with the platform's default app.
+  Uri noteFileUri(String noteId) => _uri(noteId: noteId, extra: const ['file']);
 
   static String _normalizeBaseUrl(String url) {
     final trimmed = url.trim();
@@ -102,6 +114,52 @@ class ApiService {
         .delete(_uri(noteId: id))
         .timeout(const Duration(seconds: 10));
     _checkResponse(response);
+  }
+
+  /// Uploads a file (any type) as a new file note.
+  ///
+  /// The bytes are streamed through the request, so a multi-gigabyte file never has to
+  /// be held in memory. [onProgress] is called with the number of bytes sent so far.
+  Future<Note> uploadFile({
+    required String fileName,
+    required int size,
+    required Stream<List<int>> content,
+    void Function(int sentBytes)? onProgress,
+  }) async {
+    final request = http.StreamedRequest(
+      'POST',
+      _uri(extra: const ['files'], query: {'fileName': fileName}),
+    );
+    request.headers['Content-Type'] = 'application/octet-stream';
+    if (size > 0) {
+      request.contentLength = size;
+    }
+
+    final responseFuture = _client.send(request);
+    var sent = 0;
+    try {
+      await request.sink.addStream(
+        content.map((chunk) {
+          sent += chunk.length;
+          onProgress?.call(sent);
+          return chunk;
+        }),
+      );
+      await request.sink.close();
+    } catch (_) {
+      // The server can close the connection early, for example when it rejects the
+      // file as too large. The response below still carries the real error message.
+    }
+    final response = await responseFuture;
+
+    final body = await response.stream.bytesToString();
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(
+        response.statusCode,
+        body.isEmpty ? 'Upload failed.' : body,
+      );
+    }
+    return Note.fromJson(jsonDecode(body) as Map<String, dynamic>);
   }
 
   static void _checkResponse(http.Response response) {

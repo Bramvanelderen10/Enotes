@@ -33,4 +33,36 @@ void main() {
       reason: 'the comparison drives the two-way sync in the note screen',
     );
   });
+
+  test('a note without a kind is treated as a text note', () {
+    final note = Note.fromJson({
+      'id': 'c1f0e0a4-3b1e-4e9f-9c2a-0f6a5e2d1b3c',
+      'title': 'Groceries',
+      'content': 'Milk and bread',
+      'createdAtUtc': '2026-01-01T08:00:00.0000000Z',
+      'updatedAtUtc': '2026-01-01T08:00:00.0000000Z',
+    });
+
+    expect(note.kind, Note.kindText);
+    expect(note.isFile, isFalse);
+    expect(note.fileName, isNull);
+    expect(note.sizeBytes, isNull);
+  });
+
+  test('a file note carries its name and size', () {
+    final note = Note.fromJson({
+      'id': 'c1f0e0a4-3b1e-4e9f-9c2a-0f6a5e2d1b3c',
+      'title': 'report.pdf',
+      'content': '',
+      'kind': 'file',
+      'fileName': 'report.pdf',
+      'sizeBytes': 10737418240,
+      'createdAtUtc': '2026-01-01T08:00:00.0000000Z',
+      'updatedAtUtc': '2026-01-01T08:00:00.0000000Z',
+    });
+
+    expect(note.isFile, isTrue);
+    expect(note.fileName, 'report.pdf');
+    expect(note.sizeBytes, 10737418240);
+  });
 }

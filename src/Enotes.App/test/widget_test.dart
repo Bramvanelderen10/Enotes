@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:enotes_app/main.dart';
 import 'package:enotes_app/models/note.dart';
+import 'package:enotes_app/screens/file_note_screen.dart';
 import 'package:enotes_app/screens/note_editor_screen.dart';
 import 'package:enotes_app/screens/notes_screen.dart';
 import 'package:enotes_app/screens/setup_screen.dart';
@@ -41,6 +42,9 @@ Map<String, dynamic> _noteJson(Note note) => {
   'id': note.id,
   'title': note.title,
   'content': note.content,
+  'kind': note.kind,
+  'fileName': note.fileName,
+  'sizeBytes': note.sizeBytes,
   'createdAtUtc': note.createdAtUtc.toIso8601String(),
   'updatedAtUtc': note.updatedAtUtc.toIso8601String(),
 };
@@ -448,5 +452,82 @@ void main() {
       isEmpty,
       reason: 'the last chance save must not recreate the deleted note',
     );
+  });
+
+  testWidgets('the "+" button offers a new note or a file upload', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final client = MockClient((request) async => _notesResponse([_note()]));
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: NotesScreen(
+          baseUrl: 'http://localhost:36241',
+          username: 'tester',
+          onEditSettings: () {},
+          client: client,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    // The button is a bare "+" again, not an extended button labelled "New note".
+    expect(find.text('New note'), findsNothing);
+    expect(find.byIcon(Icons.add), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.add));
+    await tester.pumpAndSettle();
+
+    // The chooser offers both actions.
+    expect(find.text('New note'), findsOneWidget);
+    expect(find.text('Upload file'), findsOneWidget);
+
+    // Picking "New note" still opens the text editor, and does not also trigger
+    // the upload flow.
+    await tester.tap(find.text('New note'));
+    await tester.pumpAndSettle();
+    expect(find.byType(NoteEditorScreen), findsOneWidget);
+    expect(find.byType(SnackBar), findsNothing);
+
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('tapping a file note opens the file screen', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final fileNote = Note(
+      id: 'note-file',
+      title: 'report.pdf',
+      content: '',
+      createdAtUtc: DateTime.utc(2026, 1, 1),
+      updatedAtUtc: DateTime.utc(2026, 1, 1),
+      kind: Note.kindFile,
+      fileName: 'report.pdf',
+      sizeBytes: 2048,
+    );
+    final client = MockClient((request) async => _notesResponse([fileNote]));
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: NotesScreen(
+          baseUrl: 'http://localhost:36241',
+          username: 'tester',
+          onEditSettings: () {},
+          client: client,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    await tester.tap(find.text('report.pdf').first);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(FileNoteScreen), findsOneWidget);
+    expect(find.text('Open / download'), findsOneWidget);
+    expect(find.text('2 KB'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox());
   });
 }

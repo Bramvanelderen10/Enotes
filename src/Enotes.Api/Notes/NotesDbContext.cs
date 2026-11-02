@@ -15,6 +15,10 @@ public sealed class NotesDbContext(DbContextOptions<NotesDbContext> options)
             entity.Property(note => note.UserName).HasMaxLength(100).IsRequired();
             entity.Property(note => note.Title).HasMaxLength(200).IsRequired();
             entity.Property(note => note.Content).IsRequired();
+            entity.Property(note => note.Kind).HasMaxLength(16).IsRequired();
+            entity.Property(note => note.FileName).HasMaxLength(400);
+            entity.Property(note => note.ContentType).HasMaxLength(200);
+            entity.Property(note => note.StoragePath).HasMaxLength(64);
             entity.HasIndex(note => new { note.UserName, note.UpdatedAtUtc });
             // SQLite stores DateTime values without a time zone. Without these converters a
             // value read back from the database has DateTimeKind.Unspecified, System.Text.Json

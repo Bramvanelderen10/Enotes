@@ -10,6 +10,11 @@ every edit is sent to the API shortly after typing stops. While the open note is
 versions from the server are loaded into it. If two devices save changes to the same note, the most
 recently saved version wins.
 
+A note is either typed text or an uploaded file. The "+" button on the notes page lets the user write
+a note or upload a file with the platform's native file picker; a file can be any type up to 10 GB. The
+file is streamed to disk next to the database (never into SQLite or into the app's memory) and appears
+as a card in the grid showing its name and size. Tapping it opens the platform's download URL.
+
 ## What this repository contains
 
 - `src/Enotes.Api`: backend service (minimal API)
@@ -18,13 +23,15 @@ recently saved version wins.
 ## Features
 
 - Notes API scoped by username (`GET`, `POST`, `PUT`, `DELETE`)
+- File notes: upload any file type up to 10 GB, streamed to disk and served back on demand
 - SQLite storage with the schema created automatically on startup
 - Server-side validation (username 1-100, title 1-200, content up to 1,000,000 characters)
 - OpenAPI document + Scalar docs UI
 - Optional CORS allow-list for a separately hosted web app
 - Two-second change polling on the notes page and on the open note
 - Notes page shown as a grid of compact preview cards: two per row on a phone and more on a wide
-  window, each card showing the title and up to six lines of the content
+  window, each card showing the title and up to six lines of the content, or a file's name and size
+- "+" button that offers writing a new note or uploading a file with the native picker
 - Full-screen note editor with two-way sync and automatic saving (no save button)
 - Copy button that puts the title and text of a note on the clipboard
 - Delete button on the note screen, next to the copy button
@@ -110,7 +117,8 @@ clients also connect to the API address on port `36241`; CORS does not apply to 
 same username on each device to see the same notes.
 
 The SQLite database is stored at `./data/notes.db` on the server, mounted into the container at
-`/data/notes.db`. Docker Compose creates the data directory as needed. Keep this directory on
+`/data/notes.db`, and uploaded files are stored beside it under `./data/files` (mounted at
+`/data/files`). Docker Compose creates the data directory as needed. Keep this directory on
 persistent storage and include it in your backups.
 
 To pick up newer published images, or to update both services after changing the repository files,
@@ -136,7 +144,7 @@ backup, stop the service, copy `data/notes.db` to a safe location, then start th
 
 ```bash
 docker compose down
-cp data/notes.db /path/to/backup/notes.db
+cp -r data /path/to/backup/data
 ENOTES_WEB_ORIGIN=https://notes.example.com docker compose up -d
 ```
 
@@ -200,9 +208,11 @@ All note endpoints include the username:
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/api/users/{userName}/notes` | List the user's notes, newest first |
-| `POST` | `/api/users/{userName}/notes` | Create a note |
+| `POST` | `/api/users/{userName}/notes` | Create a text note |
+| `POST` | `/api/users/{userName}/notes/files` | Upload a file as a new file note (raw body) |
+| `GET` | `/api/users/{userName}/notes/{noteId}/file` | Download the file of a file note |
 | `PUT` | `/api/users/{userName}/notes/{noteId}` | Update a note |
-| `DELETE` | `/api/users/{userName}/notes/{noteId}` | Delete a note |
+| `DELETE` | `/api/users/{userName}/notes/{noteId}` | Delete a note (and its file, if any) |
 
 Create and update requests use JSON with a title and content:
 
@@ -213,19 +223,31 @@ Create and update requests use JSON with a title and content:
 }
 ```
 
-Notes in responses also carry `id`, `createdAtUtc` and `updatedAtUtc`. Both timestamps are UTC in
-ISO 8601 form (with the trailing `Z`), and `updatedAtUtc` changes on every save, which is what the
-client uses to notice edits made on other devices.
+Notes in responses also carry `id`, `kind`, `fileName`, `sizeBytes`, `createdAtUtc` and
+`updatedAtUtc`. `kind` is `text` for a typed note or `file` for an uploaded file, and `fileName`
+and `sizeBytes` are only set for file notes. Both timestamps are UTC in ISO 8601 form (with the
+trailing `Z`), and `updatedAtUtc` changes on every save, which is what the client uses to notice
+edits made on other devices.
+
+An upload does not use JSON or multipart: the file is the request body, and its name is passed in
+the query string, which lets a client stream a multi-gigabyte file without buffering it. The
+`Content-Type` of the request is stored and served back when the file is downloaded.
+
+```bash
+curl -X POST "http://localhost:36241/api/users/bram/notes/files?fileName=report.pdf" \
+  -H "Content-Type: application/pdf" \
+  --data-binary @report.pdf
+```
 
 Responses:
 
 | Status | Meaning |
 |---|---|
-| `200` | Notes listed, or a note updated |
-| `201` | Note created |
+| `200` | Notes listed, a note updated, or a file streamed back |
+| `201` | Note created (text or file) |
 | `204` | Note deleted |
-| `400` | Username, title, or content failed validation |
-| `404` | No note with that id exists for that username |
+| `400` | Username, title, content, or upload failed validation |
+| `404` | No note with that id exists for that username, or it has no file |
 
 ### Examples
 
@@ -257,6 +279,13 @@ Delete a note:
 curl -X DELETE http://localhost:36241/api/users/bram/notes/<noteId>
 ```
 
+List notes and download the file of a file note (`kind` is `file`):
+
+```bash
+curl http://localhost:36241/api/users/bram/notes
+curl -OJ http://localhost:36241/api/users/bram/notes/<noteId>/file
+```
+
 ## Configuration
 
 Settings are under `Notes` in `appsettings.json` or environment variables (`__` separator).
@@ -264,6 +293,8 @@ Settings are under `Notes` in `appsettings.json` or environment variables (`__` 
 | Key | Default | Description |
 |---|---|---|
 | `Notes:DatabasePath` | `data/notes.db` | SQLite database file; its directory is created on startup |
+| `Notes:StoragePath` | `data/files` | Directory for uploaded files; defaults to a `files` folder beside the database |
+| `Notes:MaxFileSizeBytes` | `10737418240` (10 GB) | Largest upload accepted, also the Kestrel request body limit |
 | `Notes:AllowedOrigins` | `[]` (CORS disabled) | Origins allowed to call the API from a browser |
 
 **Docker-only environment variables** (used by `docker-compose.yml`, not part of the `Notes` config
@@ -280,6 +311,8 @@ Example `appsettings.json` (the Docker examples above use environment variables 
 {
   "Notes": {
     "DatabasePath": "data/notes.db",
+    "StoragePath": "data/files",
+    "MaxFileSizeBytes": 10737418240,
     "AllowedOrigins": ["http://localhost:8080"]
   }
 }

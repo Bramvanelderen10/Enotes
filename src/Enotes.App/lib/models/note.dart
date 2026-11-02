@@ -5,7 +5,16 @@ class Note {
     required this.content,
     required this.createdAtUtc,
     required this.updatedAtUtc,
+    this.kind = kindText,
+    this.fileName,
+    this.sizeBytes,
   });
+
+  /// A note holding typed text (the default).
+  static const kindText = 'text';
+
+  /// A note holding an uploaded file.
+  static const kindFile = 'file';
 
   final String id;
   final String title;
@@ -13,12 +22,27 @@ class Note {
   final DateTime createdAtUtc;
   final DateTime updatedAtUtc;
 
+  /// Either [kindText] or [kindFile].
+  final String kind;
+
+  /// Original name of the uploaded file; `null` for text notes.
+  final String? fileName;
+
+  /// Size of the uploaded file in bytes; `null` for text notes.
+  final int? sizeBytes;
+
+  /// Whether this note is an uploaded file rather than typed text.
+  bool get isFile => kind == kindFile;
+
   factory Note.fromJson(Map<String, dynamic> json) => Note(
     id: json['id'] as String,
     title: json['title'] as String,
     content: json['content'] as String,
     createdAtUtc: _parseUtc(json['createdAtUtc'] as String),
     updatedAtUtc: _parseUtc(json['updatedAtUtc'] as String),
+    kind: json['kind'] as String? ?? kindText,
+    fileName: json['fileName'] as String?,
+    sizeBytes: (json['sizeBytes'] as num?)?.toInt(),
   );
 
   /// Timestamps are always stored in UTC, but a server may return them without

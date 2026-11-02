@@ -16,20 +16,29 @@ the back button (or the system back gesture) returns to the notes without changi
 saved server" clears the stored details and shows an empty form. The app refreshes the notes every two
 seconds while that screen is open.
 
-Notes are shown as a grid of compact cards: title plus up to six lines of the content, so a short
-note stays a small square and a long one grows to about six lines before it is cut off. A phone shows
-two columns; wider windows fit more columns, with each card between roughly 120 and 240 logical
-pixels wide (that width is the `maxColumnWidth` of `lib/widgets/masonry_grid.dart`).
+Notes are shown as a grid of compact cards: a text note shows its title plus up to six lines of the
+content, so a short note stays a small square and a long one grows to about six lines before it is cut
+off, while a file note shows a file icon with its name and size. A phone shows two columns; wider
+windows fit more columns, with each card between roughly 120 and 240 logical pixels wide (that width is
+the `maxColumnWidth` of `lib/widgets/masonry_grid.dart`).
 
-Tapping a card (or "New note") opens the note on its own screen with a back button. That screen has
-no save button: every edit is sent to the API shortly after you stop typing, and the app bar reports
-the state (`Unsaved changes`, `Saving…`, `All changes saved`, or `Not saved`). While the note is
-untouched, the screen also polls for remote changes and loads them; if you are editing at the same
-time, your change is saved first and the most recently saved version wins.
+The "+" button on the notes page opens a small chooser with two actions: **New note**, which opens the
+text editor, and **Upload file**, which opens the platform's native file picker (the file chooser on
+Android, the browser dialog on web). Any file type can be uploaded and the largest allowed file is
+10 GB, which matches the API's `Notes:MaxFileSizeBytes`. The bytes are streamed to the API, so a large
+file is never held in memory, and a dialog shows the upload progress. The uploaded file appears as a
+file note card; tapping it opens the file's download URL with the browser or the app registered for
+that file type.
+
+Tapping a text note opens it on its own screen with a back button. That screen has no save button:
+every edit is sent to the API shortly after you stop typing, and the app bar reports the state
+(`Unsaved changes`, `Saving…`, `All changes saved`, or `Not saved`). While the note is untouched, the
+screen also polls for remote changes and loads them; if you are editing at the same time, your change
+is saved first and the most recently saved version wins.
 
 The app bar of the note screen also has a copy button, which puts the title and text of the note on
 the clipboard, and a delete button (for notes that exist on the server) that asks for confirmation and
-returns to the notes page.
+returns to the notes page. The file screen has a delete button that removes the file note and its file.
 
 ## Theme
 
